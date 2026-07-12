@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Flame, LogOut, ShieldAlert, Target, TrendingUp } from "lucide-react";
+import { Flame, LogOut, Repeat, ShieldAlert, Target, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   RANK_INFO,
@@ -57,8 +57,15 @@ export default function DashboardClient({ userId, profile, missions, todayLogs }
   );
 
   const { current, next, progressPct } = rankProgress(totalXp);
-  const completedCount = missionState.filter((m) => m.completed).length;
-  const allCompleted = missionState.length > 0 && completedCount === missionState.length;
+
+  // Missões diárias (sem frequência semanal) são as únicas que contam pra
+  // "dia concluído", streak e advertências. As de corrida (3x/semana e
+  // 1x/semana) rendem XP normalmente, mas não travam nem quebram o dia.
+  const dailyMissions = missionState.filter((m) => !m.weekly_frequency);
+  const weeklyMissions = missionState.filter((m) => m.weekly_frequency);
+
+  const completedCount = dailyMissions.filter((m) => m.completed).length;
+  const allCompleted = dailyMissions.length > 0 && completedCount === dailyMissions.length;
 
   async function toggleMission(mission: MissionState) {
     const willComplete = !mission.completed;
@@ -102,9 +109,15 @@ export default function DashboardClient({ userId, profile, missions, todayLogs }
       const newTotalXp = Math.max(0, totalXp + xpDelta);
       const newRank = rankForXp(newTotalXp);
 
+      const isWeeklyMission = Boolean(mission.weekly_frequency);
+      const dailyMissionsAfterToggle = missionState.filter(
+        (m) => !m.weekly_frequency
+      );
       const willAllComplete =
-        missionState.filter((m) => (m.key === mission.key ? willComplete : m.completed))
-          .length === missionState.length;
+        dailyMissionsAfterToggle.length > 0 &&
+        dailyMissionsAfterToggle.filter((m) =>
+          !isWeeklyMission && m.key === mission.key ? willComplete : m.completed
+        ).length === dailyMissionsAfterToggle.length;
 
       let updatedStreak = currentStreak;
       let updatedLongest = longestStreak;
@@ -218,12 +231,12 @@ export default function DashboardClient({ userId, profile, missions, todayLogs }
             Ordem de Operação — Hoje
           </h2>
           <span className="font-mono text-xs text-[var(--text-dim)]">
-            {completedCount}/{missionState.length} concluídas
+            {completedCount}/{dailyMissions.length} concluídas
           </span>
         </div>
 
         <div className="flex flex-col gap-2">
-          {missionState.map((m) => (
+          {dailyMissions.map((m) => (
             <MissionRow key={m.key} mission={m} onToggle={toggleMission} disabled={isPending} />
           ))}
         </div>
@@ -234,6 +247,27 @@ export default function DashboardClient({ userId, profile, missions, todayLogs }
           </p>
         )}
       </section>
+
+      {/* ---------------- Missões semanais (corrida) ---------------- */}
+      {weeklyMissions.length > 0 && (
+        <section className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-[family-name:var(--font-display)] text-lg font-600 uppercase tracking-wide flex items-center gap-2">
+              <Repeat size={18} className="text-[var(--amber)]" />
+              Missões Semanais
+            </h2>
+            <span className="font-mono text-xs text-[var(--text-dim)]">
+              não afetam a streak diária
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {weeklyMissions.map((m) => (
+              <MissionRow key={m.key} mission={m} onToggle={toggleMission} disabled={isPending} />
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
